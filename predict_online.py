@@ -47,7 +47,7 @@ def main():
 
     try:
         while True:
-            df = client.query_df("SELECT * FROM slices_play order by timestamp desc limit 1").tail(1)
+            df = client.query_df(QUERY_DF).tail(1)
             df = df.iloc[:, :-1]
             if ROLLING_MEAN:
                 rolling_mean = df.rolling(window=ROLLING_MEAN_WINDOW).mean()
