@@ -26,7 +26,7 @@ pip install -r requirements.txt
 3. Запустите следующую команду для выполнения сценария:
 
 ``` bash
-python main.py --config_path /path/to/config/
+python predict_online.py --config_path /path/to/config/
 ```
 
 Примечание: замените `/path/to/config/` на фактический путь к папке с файлом `config_online.yaml`.
