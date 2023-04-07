@@ -17,7 +17,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_path', type=str, default='')
-    parser.add_argument('--csv', type=bool, default=False)
+    parser.add_argument('--csv_kks', type=bool, default=False)
     opt = parser.parse_args()
     config = load_config(f'{opt.config_path}/config_online.yaml')
 
@@ -63,7 +63,7 @@ def main():
                 if DOUBLE_EXP_SMOOTH:
                     for i in df.columns:
                         df[str(i)] = double_exponential_smoothing(df[str(i)].to_numpy(), alpha=0.02, beta=0.09)
-                if not opt.csv:
+                if not opt.csv_kks:
                     groups = client.query_df("SELECT * FROM kks")
                 else:
                     groups = pd.read_csv(KKS, sep = ';')
