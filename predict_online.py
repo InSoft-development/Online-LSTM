@@ -63,7 +63,8 @@ def main():
                     for i in df.columns:
                         df[str(i)] = double_exponential_smoothing(df[str(i)].to_numpy(), alpha=0.02, beta=0.09)
 
-                groups = pd.read_csv(KKS, sep=';')
+                groups = client.query_df("SELECT * FROM kks")
+                print(groups['group'])
                 group_list = []
                 sum = 0
                 for i in range(0, NUM_GROUPS):
@@ -73,12 +74,13 @@ def main():
                     sum += len(group)
                     if len(group) == 0:
                         continue
-                    group = df[group['External Tags']]
+                    group = df[group['kks']]
                     scaler = scaler_list[i]
                     scaled_data = pd.DataFrame(
                         data=scaler.transform(group),
                         columns=group.columns)
                     group_list.append(scaled_data)
+                    print(group)
 
                 loss_list = []
                 for i in range(0, len(group_list)):
@@ -94,6 +96,7 @@ def main():
                     data = pd.DataFrame(loss, columns=group_list[i].columns)
                     client.insert_df(f"lstm_group{i}", data)
                     prev_df = data
+                    print(data)
                 time.sleep(5)
             else:
                 client.insert_df(f"lstm_group{i}", prev_df)
