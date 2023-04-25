@@ -28,6 +28,7 @@ def main():
     NUM_GROUPS = config['NUM_GROUPS']
     LAG = config['LAG']
     QUERY_DF = config['QUERY_DF']
+    CREATE_TABLE = config['CREATE_TABLE']
 
     ROLLING_MEAN = config['ROLLING_MEAN']
     EXP_SMOOTH = config['EXP_SMOOTH']
@@ -49,11 +50,13 @@ def main():
         scaler_list.append(scaler)
         model_list.append(model)
     prev_df = client.query_df(f"SELECT * FROM lstm_group{i}").tail(1)
+    # print(prev_df)
     try:
         while True:
             df = client.query_df(QUERY_DF).tail(1)
             print(df[POWER_ID][0])
             if df[POWER_ID][0]>POWER_LIMIT:
+                time_df = df['timestamp']
                 df = df.iloc[:, :-1]
                 if ROLLING_MEAN:
                     rolling_mean = df.rolling(window=ROLLING_MEAN_WINDOW).mean()
@@ -98,10 +101,19 @@ def main():
                     loss = abs(yhat - preds)
                     loss_list += loss.tolist()
                     data = pd.DataFrame(loss, columns=group_list[i].columns)
+                    data['timestamp'] = time_df
+                    col_str = '"timestamp"' +' ' +'DateTime, '
+                    if CREATE_TABLE:
+                        for col in group_list[i].columns:
+                            col_str += '"'+ col +'"' + ' ' + 'Float64, '
+                        print(col_str)
+                        # client.command(f'DROP TABLE lstm_group{i}')  
+                        client.command(f'CREATE TABLE lstm_group{i} ({col_str}) ENGINE = Memory')
                     client.insert_df(f"lstm_group{i}", data)
                     prev_df = data
                     print(data)
                 time.sleep(5)
+                # break
             else:
                 client.insert_df(f"lstm_group{i}", prev_df)
     finally:
