@@ -6,6 +6,9 @@ import tensorflow as tf
 import numpy as np
 import argparse
 from tensorflow.keras.models import load_model
+from scipy.special import softmax
+from loguru import logger
+from utils.fedot import make_forecast
 from utils.smooth import exponential_smoothing,double_exponential_smoothing
 from utils.utils import load_config, set_gpu, get_len_size
 import clickhouse_connect
@@ -37,6 +40,12 @@ def main():
     
     POWER_ID = config['POWER_ID']
     POWER_LIMIT = config['POWER_LIMIT']
+    
+    TRAIN_LEN_FORECAST = config['TRAIN_LEN_FORECAST']
+    LEN_FORECAST = config['LEN_FORECAST']
+    WINDOW_SIZE = config['WINDOW_SIZE']
+    TRESHOLD_ANOMALY = config['TRESHOLD_ANOMALY']
+    CONTINUE_COUNT = config['CONTINUE_COUNT']
 
     client = clickhouse_connect.get_client(host='10.23.0.177', username='default', password='asdf')
     model_list = []
@@ -50,10 +59,15 @@ def main():
         scaler_list.append(scaler)
         model_list.append(model)
     prev_df = client.query_df(f"SELECT * FROM lstm_group{i}").tail(1)
-    # print(prev_df)
     try:
         while True:
+            print('!')
             df = client.query_df(QUERY_DF).tail(1)
+            # print(forecast_df)
+            logger.error(df)
+            logger.warning(df)
+            # df = prev_df
+            # print('!!')
             print(df[POWER_ID][0])
             if df[POWER_ID][0]>POWER_LIMIT:
                 time_df = df['timestamp']
@@ -71,7 +85,7 @@ def main():
                 else:
                     groups = pd.read_csv(KKS, sep = ';')
                      
-                print(groups['group'])
+                # print(groups['group'])
                 group_list = []
                 sum = 0
                 for i in range(0, NUM_GROUPS):
@@ -87,7 +101,7 @@ def main():
                         data=scaler.transform(group),
                         columns=group.columns)
                     group_list.append(scaled_data)
-                    print(group)
+                    # print(group)
 
                 loss_list = []
                 for i in range(0, len(group_list)):
@@ -99,26 +113,65 @@ def main():
                     preds = preds[:, 0, :]
                     yhat = X[:, 0, :]
                     loss = abs(yhat - preds)
+                    loss_mean = np.mean(np.abs(yhat - preds), axis=1)
                     loss_list += loss.tolist()
                     data = pd.DataFrame(loss, columns=group_list[i].columns)
                     data['timestamp'] = time_df
-                    col_str = '"timestamp"' +' ' +'DateTime, '
+                    forecast_df = client.query_df(f"SELECT * FROM lstm_group{i}").tail(TRAIN_LEN_FORECAST)
+                    
+                    data['target_value'] = loss_mean
+                    logger.debug('!')
+                    
+                    print(np.array(loss))
+                    predict_val = make_forecast(train_data = np.array(forecast_df['target_value']), len_forecast = LEN_FORECAST, window_size = WINDOW_SIZE )
+                    print(predict_val)
+                    treshold = np.percentile(forecast_df['target_value'], TRESHOLD_ANOMALY)
+                    prob = softmax(loss_mean)
+                    count = 0
+                    prob = 0
+                    continue_count = 0
+                    for val in predict_val:
+                        count += 1
+                        if val > treshold:
+                            continue_count += 1
+                        else:
+                            # count = 0
+                            continue_count = 0
+                        if continue_count == CONTINUE_COUNT:
+                            continue_count = 0
+                            break
+                    print(count)
+                    print(treshold)
+                    data['prob'] = prob
+                    data['count'] = count
+                    count = 0
+                    # logger.info(prob)
+                
                     if CREATE_TABLE:
+                        col_str = '"timestamp"' +' ' +'DateTime, '
+                        col_str += '"target_value"' + 'Float64, ' 
+                        col_str += '"prob"' + 'Float64, '
+                        col_str += '"count"' + 'Float64, '
                         for col in group_list[i].columns:
                             col_str += '"'+ col +'"' + ' ' + 'Float64, '
                         print(col_str)
+                    # try:
                         # client.command(f'DROP TABLE lstm_group{i}')  
+                    # except:
+                        # logger.error('f')
                         client.command(f'CREATE TABLE lstm_group{i} ({col_str}) ENGINE = Memory')
                     client.insert_df(f"lstm_group{i}", data)
                     prev_df = data
-                    print(data)
-                time.sleep(5)
+                    logger.info(data)
+                time.sleep(300)
+                # count = 0
                 # break
             else:
                 client.insert_df(f"lstm_group{i}", prev_df)
-    finally:
-        client.disconnect()
-        print("disconnected")
+    except Exception as e:
+        print(e)
+        # client.disconnect()
+        # print("disconnected")
 
 if __name__ == "__main__":
     main()
