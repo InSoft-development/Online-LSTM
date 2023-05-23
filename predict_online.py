@@ -27,6 +27,7 @@ def main():
     KKS = config['KKS']
     WEIGHTS = config['WEIGHTS']
     SCALER = config['SCALER']
+    SCALER_LOSS = config['SCALER_LOSS']
 
     NUM_GROUPS = config['NUM_GROUPS']
     LAG = config['LAG']
@@ -50,6 +51,7 @@ def main():
     client = clickhouse_connect.get_client(host='10.23.0.177', username='default', password='asdf')
     model_list = []
     scaler_list = []
+    scaler_loss_list = []
     for i in range(0, NUM_GROUPS):
         model_save = f'{WEIGHTS}/lstm_group_{i}.h5'
         model = load_model(model_save)
@@ -58,17 +60,16 @@ def main():
         scaler = joblib.load(scaler_save)
         scaler_list.append(scaler)
         model_list.append(model)
+        scaler_loss_save = f'{SCALER_LOSS}/scaler_loss{i}.pkl'
+        scaler_loss = joblib.load(scaler_loss_save)
+        scaler_loss_list.append(scaler_loss)
     prev_df = client.query_df(f"SELECT * FROM lstm_group{i}").tail(1)
     try:
         while True:
-            print('!')
             df = client.query_df(QUERY_DF).tail(1)
-            # print(forecast_df)
-            logger.error(df)
-            logger.warning(df)
-            # df = prev_df
-            # print('!!')
-            print(df[POWER_ID][0])
+            logger.info(f'INPUT DATAFRAME: \n {df}')
+            logger.info(f'POWER VALUE: {df[POWER_ID][0]}')
+            
             if df[POWER_ID][0]>POWER_LIMIT:
                 time_df = df['timestamp']
                 df = df.iloc[:, :-1]
@@ -117,19 +118,25 @@ def main():
                     loss_list += loss.tolist()
                     data = pd.DataFrame(loss, columns=group_list[i].columns)
                     data['timestamp'] = time_df
+                    
                     forecast_df = client.query_df(f"SELECT * FROM lstm_group{i}").tail(TRAIN_LEN_FORECAST)
+                    logger.debug(forecast_df)
+                    data['target_value'] = scaler_loss_list[i].transform(loss_mean.reshape(1,-1))
+                
+                    logger.info(f"Target value: {data['target_value']}")
+                    logger.info (loss_mean)
                     
-                    data['target_value'] = loss_mean
-                    logger.debug('!')
-                    
-                    print(np.array(loss))
+                    # print(np.array(loss))
                     predict_val = make_forecast(train_data = np.array(forecast_df['target_value']), len_forecast = LEN_FORECAST, window_size = WINDOW_SIZE )
+                    # predict_val = 0 
+                    logger.debug('')
                     print(predict_val)
-                    treshold = np.percentile(forecast_df['target_value'], TRESHOLD_ANOMALY)
+                    treshold = TRESHOLD_ANOMALY
                     prob = softmax(loss_mean)
                     count = 0
                     prob = 0
                     continue_count = 0
+                    
                     for val in predict_val:
                         count += 1
                         if val > treshold:
@@ -140,13 +147,18 @@ def main():
                         if continue_count == CONTINUE_COUNT:
                             continue_count = 0
                             break
+                    if count<len(predict_val):
+                        logger.info
                     print(count)
                     print(treshold)
                     data['prob'] = prob
                     data['count'] = count
                     count = 0
                     # logger.info(prob)
-                
+                    # try:
+                    #     client.command(f'DROP TABLE lstm_group{i}')  
+                    # except Exception as e:
+                    #     logger.error(e)
                     if CREATE_TABLE:
                         col_str = '"timestamp"' +' ' +'DateTime, '
                         col_str += '"target_value"' + 'Float64, ' 
@@ -155,23 +167,21 @@ def main():
                         for col in group_list[i].columns:
                             col_str += '"'+ col +'"' + ' ' + 'Float64, '
                         print(col_str)
-                    # try:
-                        # client.command(f'DROP TABLE lstm_group{i}')  
-                    # except:
-                        # logger.error('f')
                         client.command(f'CREATE TABLE lstm_group{i} ({col_str}) ENGINE = Memory')
                     client.insert_df(f"lstm_group{i}", data)
                     prev_df = data
-                    logger.info(data)
+                    logger.info(f'LOSS DATA: \n {data}')
                 time.sleep(300)
                 # count = 0
                 # break
             else:
                 client.insert_df(f"lstm_group{i}", prev_df)
+                logger.warning(f'POWER_VALUE < {POWER_LIMIT}')
+                logger.warning(f'INSERT PREVIOS VALUE')
     except Exception as e:
-        print(e)
+        logger.error(e)
         # client.disconnect()
-        # print("disconnected")
+        logger.info("disconnected")
 
 if __name__ == "__main__":
     main()
