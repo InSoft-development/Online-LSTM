@@ -129,12 +129,12 @@ def main():
                     # print(np.array(loss))
                     predict_val = make_forecast(train_data = np.array(forecast_df['target_value']), len_forecast = LEN_FORECAST, window_size = WINDOW_SIZE )
                     # predict_val = 0 
-                    logger.debug('')
+                    
                     print(predict_val)
                     treshold = TRESHOLD_ANOMALY
                     prob = softmax(loss_mean)
                     count = 0
-                    prob = 0
+                    prob = np.round(data['target_value'],0)
                     continue_count = 0
                     
                     for val in predict_val:
@@ -151,6 +151,8 @@ def main():
                         logger.info
                     print(count)
                     print(treshold)
+                    if count == LEN_FORECAST:
+                        count = 8640
                     data['prob'] = prob
                     data['count'] = count
                     count = 0
