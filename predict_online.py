@@ -12,6 +12,7 @@ from utils.fedot import make_forecast
 from utils.smooth import exponential_smoothing,double_exponential_smoothing
 from utils.utils import load_config, set_gpu, get_len_size
 import clickhouse_connect
+import scipy
 
 def main():
     physical_devices = tf.config.list_physical_devices('GPU')
@@ -60,7 +61,7 @@ def main():
         scaler = joblib.load(scaler_save)
         scaler_list.append(scaler)
         model_list.append(model)
-        scaler_loss_save = f'{SCALER_LOSS}/scaler_loss{i}.pkl'
+        scaler_loss_save = f"{SCALER_LOSS}/{config['SCALER_LOSS_NAME']}/scaler_loss{i}.pkl"
         scaler_loss = joblib.load(scaler_loss_save)
         scaler_loss_list.append(scaler_loss)
     prev_df = client.query_df(f"SELECT * FROM lstm_group{i}").tail(1)
@@ -84,6 +85,7 @@ def main():
                 if not opt.csv_kks:
                     groups = client.query_df("SELECT * FROM kks")
                 else:
+                    logger.debug('READ CSV KKS')
                     groups = pd.read_csv(KKS, sep = ';')
                      
                 # print(groups['group'])
@@ -120,19 +122,24 @@ def main():
                     data['timestamp'] = time_df
                     
                     forecast_df = client.query_df(f"SELECT * FROM lstm_group{i}").tail(TRAIN_LEN_FORECAST)
-                    logger.debug(forecast_df)
-                    data['target_value'] = scaler_loss_list[i].transform(loss_mean.reshape(1,-1))
-                
+                    # logger.debug(forecast_df)
+                    try: 
+                        if config['SCALER_LOSS_NAME'] == 'minmax':
+                            data['target_value'] = scaler_loss_list[i].transform(loss_mean.reshape(1,-1))
+                        elif config['SCALER_LOSS_NAME'] == 'cdf':
+                            # logger.debug(loss_mean)
+                            scaler_ = scipy.stats.rv_histogram(scaler_loss_list[i])
+                            # logger.debug(scaler_loss_list[i])
+                            data['target_value'] = scaler_.cdf(loss_mean) * 100
+    
+                    except Exception as e:
+                        logger.error(e)
+                        
                     logger.info(f"Target value: {data['target_value']}")
-                    logger.info (loss_mean)
+                    # logger.info (loss_mean)
                     
-                    # print(np.array(loss))
                     predict_val = make_forecast(train_data = np.array(forecast_df['target_value']), len_forecast = LEN_FORECAST, window_size = WINDOW_SIZE )
-                    # predict_val = 0 
-                    
-                    print(predict_val)
                     treshold = TRESHOLD_ANOMALY
-                    prob = softmax(loss_mean)
                     count = 0
                     prob = np.round(data['target_value'],0)
                     continue_count = 0
