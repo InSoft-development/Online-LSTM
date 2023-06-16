@@ -13,17 +13,31 @@ from utils.smooth import exponential_smoothing,double_exponential_smoothing
 from utils.utils import load_config, set_gpu, get_len_size
 import clickhouse_connect
 import scipy
+import sys
+
+
+
+VERSION = "1.0.0"
+
+
+
 
 def main():
-    physical_devices = tf.config.list_physical_devices('GPU')
-    for device in physical_devices:
-        tf.config.experimental.set_memory_growth(device, True)
-
+    
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_path', type=str, default='')
     parser.add_argument('--csv_kks', type=bool, default=False)
+    parser.add_argument("-v", "--version", action="store_true", help="вывести версию программы")
     opt = parser.parse_args()
+    if opt.version:
+        print("Версия predict online:", VERSION)
+        sys.exit()
+    
     config = load_config(f'{opt.config_path}/config_online.yaml')
+    
+    physical_devices = tf.config.list_physical_devices('GPU')
+    for device in physical_devices:
+        tf.config.experimental.set_memory_growth(device, True)
 
     KKS = config['KKS']
     WEIGHTS = config['WEIGHTS']
@@ -49,7 +63,7 @@ def main():
     TRESHOLD_ANOMALY = config['TRESHOLD_ANOMALY']
     CONTINUE_COUNT = config['CONTINUE_COUNT']
 
-    client = clickhouse_connect.get_client(host='10.23.0.177', username='default', password='asdf')
+    client = clickhouse_connect.get_client(host='10.23.0.87', username='default', password='asdf')
     model_list = []
     scaler_list = []
     scaler_loss_list = []
