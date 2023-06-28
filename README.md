@@ -1,3 +1,5 @@
+# Online lstm (version 1.0.0)
+
 # Краткое описание программы
 
 ![Alt text](image.png)
