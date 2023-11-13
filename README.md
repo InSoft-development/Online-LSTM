@@ -36,6 +36,8 @@ pip install -r requirements.txt
    - `TRESHOLD_ANOMALY`: Порог значения для определения аномальности.
    - `CONTINUE_COUNT`: Значение длителности аномального участка.
 3. Запустите следующую команду для выполнения сценария:
+<br> </br>
+
 Для первого запуска(в случае если в БД от запустите команду:
 ```bash
 python predict_online.py --config_path /path/to/config/ --firtst_start 
