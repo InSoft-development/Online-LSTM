@@ -50,7 +50,7 @@ python predict_online.py --config_path /path/to/config/
 Дополнительно: 
 Для удаления таблиц с предсказаниями сети  LSTM из БД выполните команду:
 ```bash
-python predict_online.py --config_path 
+python predict_online.py --config_path /path/to/config/ --delete_group_table
 ```
 
 Примечание: замените `/path/to/config/` на фактический путь к папке с файлом `config_online.yaml`.

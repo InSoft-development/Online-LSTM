@@ -198,6 +198,8 @@ def main():
                         predict_val  = 0
                         prob = 0 
                         count = 0
+                        data['prob'] = prob
+                        data['count'] = count
                         logger.info(prob)
                     
                     if opt.delete_group_table:
