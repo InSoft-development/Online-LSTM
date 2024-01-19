@@ -50,6 +50,10 @@ def main():
     SCALER = config['SCALER']
     SCALER_LOSS = config['SCALER_LOSS']
     ZERO_PREV_VAL = config['ZERO_PREV_VAL']
+    
+    IP_BD = config["IP_BD"]
+    USER = config["USER"]
+    PASSWORD = config["PASSWORD"]
 
     NUM_GROUPS = config['NUM_GROUPS']
     LAG = config['LAG']
@@ -71,7 +75,7 @@ def main():
     
     TIME_BETWEEN_PREDICT = config['TIME_BETWEEN_PREDICT']
 
-    client = clickhouse_connect.get_client(host='10.23.0.87', username='default', password='asdf')
+    client = clickhouse_connect.get_client(host=IP_BD, username=USER, password=PASSWORD)
     model_list = []
     scaler_list = []
     scaler_loss_list = []
@@ -86,16 +90,19 @@ def main():
         scaler_loss_save = f"{SCALER_LOSS}/{config['SCALER_LOSS_NAME']}/scaler_loss{i}.pkl"
         scaler_loss = joblib.load(scaler_loss_save)
         scaler_loss_list.append(scaler_loss)
-    prev_df = client.query_df(f"SELECT * FROM lstm_group{i}").tail(1)
+    if not opt.first_start:
+        prev_df = client.query_df(f"SELECT * FROM lstm_group{i} ORDER BY timestamp DESC LIMIT 1")
     
     while True:
             try:
-                df = client.query_df(QUERY_DF).tail(1)
+                df = client.query_df(QUERY_DF)
                 if opt.log:
                     logger.info(f'INPUT DATAFRAME: \n {df}')
                     logger.info(f'POWER VALUE: {df[POWER_ID][0]}')
+                    # logger.info(print(df.columns))
+                    # logger.info(df['Sochi2.UNIT.AM.20CJA01CT001-AM.Q'])
                 
-                if df[POWER_ID][0]>POWER_LIMIT:
+                if df[POWER_ID][0]>POWER_LIMIT or opt.first_start: 
                     time_df = df['timestamp']
                     df = df.iloc[:, :-1]
                     if ROLLING_MEAN:
@@ -119,7 +126,9 @@ def main():
                     for i in range(0, NUM_GROUPS):
                         group = groups[groups['group'] == i]
                         if i != 0:
-                            group = group.append(groups[groups['group'] == 0])
+                            # group = group.append(groups[groups['group'] == 0])
+                            # group = pd.append(groups[groups['group'] == 0])
+                            group = pd.concat([group, groups[groups['group'] == 0]])
                         sum += len(group)
                         if len(group) == 0:
                             continue
@@ -140,9 +149,9 @@ def main():
                     for i in range(0, len(group_list)):
                         if opt.delete_group_table:
                             try:
-                                logger.info('DROP GROUP TABLE')
+                                logger.info(f'DROP GROUP TABLE {i}')
                                 client.command(f'DROP TABLE lstm_group{i}')  
-                                sys.exit()
+                                # sys.exit()
                             except Exception as e:
                                 logger.error(e)
                             
@@ -165,7 +174,7 @@ def main():
                         data['timestamp'] = time_df
                         
                         if not opt.first_start:
-                            forecast_df = client.query_df(f"SELECT * FROM lstm_group{i}").tail(TRAIN_LEN_FORECAST)
+                            forecast_df = client.query_df(f"SELECT * FROM lstm_group{i} ORDER BY timestamp DESC LIMIT {TRAIN_LEN_FORECAST}")
                         # logger.debug(forecast_df)
                         try: 
                             if config['SCALER_LOSS_NAME'] == 'minmax':
@@ -223,28 +232,36 @@ def main():
                             try:
                                 logger.info('DROP GROUP TABLE')
                                 client.command(f'DROP TABLE lstm_group{i}')  
-                                sys.exit()
+                                # sys.exit()
                             except Exception as e:
                                 logger.error(e)
                         if opt.first_start:
-                            col_str = '"timestamp"' +' ' +'DateTime, '
-                            col_str += '"target_value"' + 'Float64, ' 
-                            col_str += '"prob"' + 'Float64, '
-                            col_str += '"count"' + 'Float64, '
-                            for col in group_list[i].columns:
-                                col_str += '"'+ col +'"' + ' ' + 'Float64, '
-                            print(col_str)
-                            client.command(f'CREATE TABLE lstm_group{i} ({col_str}) ENGINE = Memory')
+                            try:
+                                
+                                col_str = '"timestamp"' +' ' +'DateTime, '
+                                col_str += '"target_value"' + 'Float64, ' 
+                                col_str += '"prob"' + 'Float64, '
+                                col_str += '"count"' + 'Float64, '
+                                for col in group_list[i].columns:
+                                    col_str += '"'+ col +'"' + ' ' + 'Float64, '
+                                print(col_str)
+                                client.command(f'CREATE TABLE lstm_group{i} ({col_str}) ENGINE = Memory')
+                                logger.info(f"Create {i} table")
+                            except Exception as e:
+                                print(e)
+                                pass
                         client.insert_df(f"lstm_group{i}", data)
                         prev_df = data
                         # logger.info(f'LOSS DATA: \n {data}')
-                        if opt.first_start:
-                            sys.exit()
+                    if opt.first_start:
+                        sys.exit()
                         
                     time.sleep(TIME_BETWEEN_PREDICT)
                     # count = 0
                     # break
                 else:
+
+                    # prev_df = data
                     if ZERO_PREV_VAL:
                         prev_df['target_value'] = prev_df['target_value']*0
                     logger.info(f'prev df:')
